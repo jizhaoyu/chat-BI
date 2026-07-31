@@ -52,4 +52,4 @@
 
 ## 当前状态
 
-CBI-P1 已完成代码实现并通过 Java 21 快速验证，正在等待远程 Docker/Testcontainers 验收。CBI-P2 尚未开始；连接测试、凭据加密和动态外部数据源池属于下一阶段。
+CBI-P1 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。CBI-P2 尚未开始；连接测试、凭据加密和动态外部数据源池属于下一阶段。

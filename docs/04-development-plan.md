@@ -15,7 +15,9 @@
 
 ## CBI-P1 工程骨架与样例数据源
 
-状态：`in_progress`（远程 Docker/Testcontainers 验收中）
+状态：`completed`
+
+验收证据：Java 21 快速测试与 GitHub Actions 双库 Compose、只读授权、Testcontainers 集成测试均通过。
 
 - 创建 Spring Boot/Maven 工程、模块边界、统一错误响应和认证骨架。
 - 配置平台 MySQL、Flyway、Testcontainers 和 CI。
