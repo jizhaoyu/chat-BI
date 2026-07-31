@@ -39,6 +39,7 @@
 - [样例数据与评测集](docs/09-sample-data-and-evaluation.md)
 - [威胁模型](docs/10-threat-model.md)
 - [演示脚本](docs/11-demo-script.md)
+- [用户配置清单](docs/12-user-configuration-checklist.md)
 
 ## 开发原则
 
@@ -51,5 +52,4 @@
 
 ## 当前状态
 
-当前仅完成开发文档，尚未创建代码脚手架。第一阶段从 `docs/04-development-plan.md` 的 CBI-P1 开始。
-"# chat-BI"  
+CBI-P1 已完成代码实现并通过 Java 21 快速验证，正在等待远程 Docker/Testcontainers 验收。CBI-P2 尚未开始；连接测试、凭据加密和动态外部数据源池属于下一阶段。

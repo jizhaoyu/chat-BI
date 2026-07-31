@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: chatbi
+  flyway:
+    enabled: false
+server:
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:true}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+app:
+  bootstrap-identity:
+    enabled: ${BOOTSTRAP_IDENTITY_ENABLED:false}
+    tenant-name: ${BOOTSTRAP_TENANT_NAME:local}
+    username: ${BOOTSTRAP_DATA_ADMIN_USERNAME:data-admin}
+    password: ${BOOTSTRAP_DATA_ADMIN_PASSWORD:}
+  platform:
+    datasource:
+      url: "${PLATFORM_DB_URL:jdbc:mysql://localhost:3307/chatbi_platform?useSSL=false&allowPublicKeyRetrieval=true}"
+      username: ${PLATFORM_DB_USERNAME:chatbi_app}
+      password: ${PLATFORM_DB_PASSWORD}
+      maximum-pool-size: ${PLATFORM_DB_POOL_SIZE:10}
+  sample-analysis:
+    enabled: ${SAMPLE_ANALYSIS_ENABLED:false}
+    datasource:
+      url: "${SAMPLE_DB_URL:jdbc:mysql://localhost:3308/sample_sales?useSSL=false&allowPublicKeyRetrieval=true&allowMultiQueries=false&allowLoadLocalInfile=false}"
+      username: ${SAMPLE_DB_USERNAME:chatbi_reader}
+      password: ${SAMPLE_DB_PASSWORD:}
+      maximum-pool-size: ${SAMPLE_DB_POOL_SIZE:3}

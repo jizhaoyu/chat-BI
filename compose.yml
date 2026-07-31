@@ -1,0 +1,37 @@
+services:
+  platform-mysql:
+    image: mysql:8.4.7
+    container_name: chatbi-platform-mysql
+    environment:
+      MYSQL_DATABASE: chatbi_platform
+      MYSQL_USER: chatbi_app
+      MYSQL_PASSWORD: ${PLATFORM_DB_PASSWORD:?PLATFORM_DB_PASSWORD must be set}
+      MYSQL_ROOT_PASSWORD: ${PLATFORM_DB_ROOT_PASSWORD:?PLATFORM_DB_ROOT_PASSWORD must be set}
+    ports: ["3307:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes: ["platform-data:/var/lib/mysql"]
+
+  sample-sales-mysql:
+    image: mysql:8.4.7
+    container_name: chatbi-sample-sales-mysql
+    environment:
+      MYSQL_DATABASE: sample_sales
+      MYSQL_ROOT_PASSWORD: ${SAMPLE_DB_ROOT_PASSWORD:?SAMPLE_DB_ROOT_PASSWORD must be set}
+      SAMPLE_READER_PASSWORD: ${SAMPLE_DB_PASSWORD:?SAMPLE_DB_PASSWORD must be set}
+    ports: ["3308:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - sample-sales-data:/var/lib/mysql
+      - ./docker/sample-sales/init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  platform-data:
+  sample-sales-data:

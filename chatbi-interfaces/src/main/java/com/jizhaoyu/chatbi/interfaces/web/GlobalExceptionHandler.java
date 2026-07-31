@@ -1,0 +1,42 @@
+package com.jizhaoyu.chatbi.interfaces.web;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        exception.getBindingResult().getFieldErrors().forEach(error -> fields.putIfAbsent(error.getField(), error.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(new ApiError("VALIDATION_ERROR", "Request validation failed", fields));
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    ResponseEntity<ApiError> responseStatus(ResponseStatusException exception) {
+        String code = exception.getReason() == null ? "REQUEST_REJECTED" : exception.getReason();
+        return ResponseEntity.status(exception.getStatusCode()).body(new ApiError(code, "Request rejected", null));
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    ResponseEntity<ApiError> forbidden() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ApiError("FORBIDDEN", "Access denied", null));
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    ResponseEntity<ApiError> business(RuntimeException exception) {
+        return ResponseEntity.badRequest().body(new ApiError(exception.getMessage(), "Request rejected", null));
+    }
+
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<ApiError> unexpected() {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiError("INTERNAL_ERROR", "Unexpected error", null));
+    }
+}
