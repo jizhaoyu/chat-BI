@@ -1,6 +1,7 @@
 package com.jizhaoyu.chatbi.application.execution;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface QueryExecutionRepository {
@@ -14,4 +15,6 @@ public interface QueryExecutionRepository {
             boolean truncated,
             String errorCode,
             String resultDigest);
+
+    List<StaleQueryExecution> recoverStale(Instant completedAt, Instant startedBefore, String errorCode);
 }

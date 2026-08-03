@@ -50,3 +50,5 @@ app:
       tenant: ${QUERY_TENANT_CONCURRENCY:8}
       data-source: ${QUERY_DATASOURCE_CONCURRENCY:3}
       user: ${QUERY_USER_CONCURRENCY:2}
+    recovery:
+      fixed-delay-ms: ${QUERY_RECOVERY_FIXED_DELAY_MS:30000}

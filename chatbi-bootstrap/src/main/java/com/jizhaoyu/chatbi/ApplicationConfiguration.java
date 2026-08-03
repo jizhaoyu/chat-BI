@@ -21,6 +21,7 @@ import com.jizhaoyu.chatbi.application.execution.QueryExecutionService;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionPreparationService;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionCompletionService;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionLimiter;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionRecoveryService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -95,6 +96,13 @@ public class ApplicationConfiguration {
             ApprovedQueryExecutor executor,
             QueryExecutionCompletionService completion) {
         return new QueryExecutionService(preparation, limiter, executor, completion);
+    }
+
+    @Bean
+    QueryExecutionRecoveryService queryExecutionRecoveryService(
+            QueryExecutionRepository executions, AuditPort auditPort) {
+        return new QueryExecutionRecoveryService(
+                executions, auditPort, Clock.systemUTC(), Duration.ofSeconds(180));
     }
 
     @Bean

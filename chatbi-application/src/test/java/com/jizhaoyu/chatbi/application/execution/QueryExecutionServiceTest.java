@@ -203,5 +203,11 @@ class QueryExecutionServiceTest {
             this.rowCount = rowCount;
             this.errorCode = errorCode;
         }
+
+        @Override
+        public List<StaleQueryExecution> recoverStale(
+                Instant completedAt, Instant startedBefore, String errorCode) {
+            return List.of();
+        }
     }
 }
