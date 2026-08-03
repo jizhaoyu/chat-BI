@@ -77,6 +77,7 @@ class InMemoryQueryExecutionLimiterTest {
         UUID tenant = UUID.randomUUID();
         UUID source = UUID.randomUUID();
         CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch attempted = new CountDownLatch(contenders);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger active = new AtomicInteger();
         AtomicInteger maximumActive = new AtomicInteger();
@@ -86,20 +87,19 @@ class InMemoryQueryExecutionLimiterTest {
             List<? extends Future<?>> futures = java.util.stream.IntStream.range(0, contenders)
                     .mapToObj(index -> executor.submit(() -> {
                         await(start);
-                        limiter.tryAcquire(approved(tenant, UUID.randomUUID(), source)).ifPresent(permit -> {
+                        var permit = limiter.tryAcquire(approved(tenant, UUID.randomUUID(), source));
+                        attempted.countDown();
+                        permit.ifPresent(acquiredPermit -> {
                             int current = active.incrementAndGet();
                             maximumActive.accumulateAndGet(current, Math::max);
                             acquired.incrementAndGet();
                             await(release);
                             active.decrementAndGet();
-                            permit.close();
+                            acquiredPermit.close();
                         });
                     })).toList();
             start.countDown();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (acquired.get() < limit && System.nanoTime() < deadline) {
-                Thread.onSpinWait();
-            }
+            await(attempted);
             assertThat(acquired).hasValue(limit);
             release.countDown();
             for (Future<?> future : futures) {
