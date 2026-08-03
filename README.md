@@ -52,4 +52,4 @@
 
 ## 当前状态
 
-CBI-P1 与 CBI-P2 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。当前已具备双库事务隔离、凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权和语义配置；CBI-P3 已完成首批 SQL AST 白名单校验、权限解析和一次性短时审批，正在补齐受控执行前的安全闭环。
+CBI-P1、CBI-P2 与 CBI-P3 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。当前已具备双库事务隔离、凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权、SQL AST 白名单校验和一次性短时审批；正在推进 CBI-P4 受控执行。

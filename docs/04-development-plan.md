@@ -41,9 +41,11 @@
 
 ## CBI-P3 SQL 安全网关
 
-状态：`in_progress`
+状态：`completed`
 
 首批交付：固定 JSqlParser 5.3，完成普通 MySQL 单条 `SELECT` 的显式 AST 白名单、活动快照表列授权解析、LIMIT 收紧、稳定拒绝码、两分钟一次性批准标识以及权限/语义变化自动失效。CTE、子查询和 OFFSET 暂不开放，须在独立作用域解析与资源测试完成后再扩展。
+
+验收证据：Java 21 全仓 164 个快速测试通过；GitHub Actions 运行 `30783600219` 的 `fast-tests` 与 `container-acceptance` 均成功，真实 MySQL 验证 V3 审批迁移、标识仅存哈希、一次消费、重放拒绝和授权版本变化失效。
 
 - 验证并选定 AST 解析器和支持的 MySQL 语法子集。
 - 实现语句类型、表列、函数、通配符、LIMIT 和多语句规则。
