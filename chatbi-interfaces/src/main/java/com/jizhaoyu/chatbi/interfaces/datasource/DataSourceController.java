@@ -1,5 +1,6 @@
 package com.jizhaoyu.chatbi.interfaces.datasource;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.jizhaoyu.chatbi.application.datasource.DataSourceApplicationService;
 import com.jizhaoyu.chatbi.application.datasource.DataSourceCommand;
 import com.jizhaoyu.chatbi.application.datasource.DataSourceView;
@@ -37,7 +38,7 @@ public class DataSourceController {
     @ResponseStatus(HttpStatus.CREATED)
     public DataSourceResponse create(Authentication authentication, @Valid @RequestBody CreateDataSourceRequest request) {
         DataSourceCommand command = new DataSourceCommand(request.name(), request.host(), request.port(), request.database(),
-                request.username(), request.credentialRef(), request.dialect(), request.maxRows(), request.timeoutSeconds());
+                request.username(), request.password(), request.dialect(), request.maxRows(), request.timeoutSeconds());
         return DataSourceResponse.from(service.create(AuthenticatedUser.require(authentication), command));
     }
 
@@ -50,7 +51,7 @@ public class DataSourceController {
     public DataSourceResponse update(Authentication authentication, @PathVariable UUID id,
                                      @Valid @RequestBody CreateDataSourceRequest request) {
         DataSourceCommand command = new DataSourceCommand(request.name(), request.host(), request.port(), request.database(),
-                request.username(), request.credentialRef(), request.dialect(), request.maxRows(), request.timeoutSeconds());
+                request.username(), request.password(), request.dialect(), request.maxRows(), request.timeoutSeconds());
         return DataSourceResponse.from(service.update(AuthenticatedUser.require(authentication), id, command));
     }
 
@@ -65,10 +66,15 @@ public class DataSourceController {
             @Min(1) @Max(65535) int port,
             @NotBlank @Size(max = 64) String database,
             @NotBlank @Size(max = 128) String username,
-            @NotBlank @Size(max = 128) String credentialRef,
+            @NotBlank @Size(min = 12, max = 1024) String password,
             @NotNull DataSourceDialect dialect,
             @Min(1) @Max(1_000_000) int maxRows,
-            @Min(1) @Max(600) int timeoutSeconds) {}
+            @Min(1) @Max(600) int timeoutSeconds) {
+        @JsonAnySetter
+        public void rejectUnknownField(String name, Object ignored) {
+            throw new IllegalArgumentException("UNKNOWN_REQUEST_FIELD");
+        }
+    }
 
     public record DataSourceResponse(UUID id, String name, DataSourceDialect dialect, DataSourceStatus status, int maxRows, int timeoutSeconds) {
         static DataSourceResponse from(DataSourceView view) {

@@ -3,6 +3,7 @@ package com.jizhaoyu.chatbi.interfaces.web;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
@@ -17,6 +18,12 @@ public class GlobalExceptionHandler {
         Map<String, String> fields = new LinkedHashMap<>();
         exception.getBindingResult().getFieldErrors().forEach(error -> fields.putIfAbsent(error.getField(), error.getDefaultMessage()));
         return ResponseEntity.badRequest().body(new ApiError("VALIDATION_ERROR", "Request validation failed", fields));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> unreadableRequest() {
+        return ResponseEntity.badRequest()
+                .body(new ApiError("REQUEST_BODY_INVALID", "Request body is invalid", null));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

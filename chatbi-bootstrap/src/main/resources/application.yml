@@ -33,6 +33,10 @@ app:
       username: ${PLATFORM_DB_USERNAME:chatbi_app}
       password: ${PLATFORM_DB_PASSWORD}
       maximum-pool-size: ${PLATFORM_DB_POOL_SIZE:10}
+  datasource-credentials:
+    active-key-id: ${DATASOURCE_ENCRYPTION_KEY_ID}
+    active-key-base64: ${DATASOURCE_ENCRYPTION_KEY_BASE64}
+    old-keys: ${DATASOURCE_ENCRYPTION_OLD_KEYS:}
   sample-analysis:
     enabled: ${SAMPLE_ANALYSIS_ENABLED:false}
     datasource:

@@ -31,14 +31,13 @@ public class JdbcDataSourceRepository implements DataSourceRepository {
     }
 
     @Override
-    public DataSourceView save(UUID tenantId, DataSourceCommand command) {
-        UUID id = UUID.randomUUID();
+    public DataSourceView save(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef) {
         jdbc.update("""
                 INSERT INTO data_source(id, tenant_id, name, dialect, host, port, database_name, username,
                                         credential_ref, status, max_rows, timeout_seconds)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
                 """, id.toString(), tenantId.toString(), command.name(), command.dialect().name(), command.host(),
-                command.port(), command.database(), command.username(), command.credentialRef(), command.maxRows(), command.timeoutSeconds());
+                command.port(), command.database(), command.username(), credentialRef, command.maxRows(), command.timeoutSeconds());
         return findByTenantAndId(tenantId, id).orElseThrow();
     }
 
@@ -53,7 +52,7 @@ public class JdbcDataSourceRepository implements DataSourceRepository {
     }
 
     @Override
-    public DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command) {
+    public DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef) {
         int changed = jdbc.update("""
                 UPDATE data_source
                 SET name = ?, dialect = ?, host = ?, port = ?, database_name = ?, username = ?,
@@ -61,23 +60,27 @@ public class JdbcDataSourceRepository implements DataSourceRepository {
                     version = version + 1
                 WHERE tenant_id = ? AND id = ? AND status = 'DRAFT'
                 """, command.name(), command.dialect().name(), command.host(), command.port(), command.database(),
-                command.username(), command.credentialRef(), command.maxRows(), command.timeoutSeconds(),
+                command.username(), credentialRef, command.maxRows(), command.timeoutSeconds(),
                 tenantId.toString(), id.toString());
         if (changed != 1) throw new IllegalArgumentException("DATASOURCE_NOT_FOUND");
         return findByTenantAndId(tenantId, id).orElseThrow();
     }
 
     @Override
-    public DataSourceView updateStatus(UUID tenantId, UUID id, DataSourceStatus status) {
-        int changed = jdbc.update("UPDATE data_source SET status = ?, updated_at = CURRENT_TIMESTAMP, version = version + 1 WHERE tenant_id = ? AND id = ?",
-                status.name(), tenantId.toString(), id.toString());
-        if (changed != 1) throw new IllegalArgumentException("DATASOURCE_NOT_FOUND");
+    public DataSourceView transitionStatus(
+            UUID tenantId, UUID id, DataSourceStatus expectedStatus, DataSourceStatus targetStatus) {
+        int changed = jdbc.update("UPDATE data_source SET status = ?, updated_at = CURRENT_TIMESTAMP, "
+                        + "version = version + 1 WHERE tenant_id = ? AND id = ? AND status = ?",
+                targetStatus.name(), tenantId.toString(), id.toString(), expectedStatus.name());
+        if (changed != 1) {
+            throw new IllegalStateException("DATASOURCE_STATE_CONFLICT");
+        }
         return findByTenantAndId(tenantId, id).orElseThrow();
     }
 
     @Override
     public void disable(UUID tenantId, UUID id) {
-        updateStatus(tenantId, id, DataSourceStatus.DISABLED);
+        transitionStatus(tenantId, id, DataSourceStatus.READY, DataSourceStatus.DISABLED);
     }
 
     private static DataSourceView map(ResultSet rs, int row) throws SQLException {

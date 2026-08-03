@@ -7,15 +7,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DataSourceRepository {
-    DataSourceView save(UUID tenantId, DataSourceCommand command);
+    DataSourceView save(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef);
 
     List<DataSourceView> findAllByTenant(UUID tenantId);
 
     Optional<DataSourceView> findByTenantAndId(UUID tenantId, UUID id);
 
-    DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command);
+    DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef);
 
-    DataSourceView updateStatus(UUID tenantId, UUID id, DataSourceStatus status);
+    DataSourceView transitionStatus(
+            UUID tenantId, UUID id, DataSourceStatus expectedStatus, DataSourceStatus targetStatus);
 
     void disable(UUID tenantId, UUID id);
 }

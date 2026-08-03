@@ -78,10 +78,27 @@ class DataSourceControllerSecurityTest {
                 .andExpect(jsonPath("$.username").doesNotExist());
     }
 
+    @Test
+    void rejectsClientSuppliedCredentialReference() throws Exception {
+        String json = requestJson().replace("\"password\":\"reader-secret-password\"",
+                "\"password\":\"reader-secret-password\",\"credentialRef\":\"env/PLATFORM_DB_PASSWORD\"");
+
+        mvc.perform(post("/api/v1/data-sources").with(as(Role.DATA_ADMIN)).with(csrf())
+                        .contentType("application/json").content(json))
+                .andExpect(status().isBadRequest());
+    }
+
     private String requestJson() throws Exception {
-        return mapper.writeValueAsString(new DataSourceController.CreateDataSourceRequest(
-                "sales", "sample-sales", 3306, "sample_sales", "reader", "env/sample-reader",
-                DataSourceDialect.MYSQL, 1000, 30));
+        return mapper.writeValueAsString(java.util.Map.of(
+                "name", "sales",
+                "host", "sample-sales.example.com",
+                "port", 3306,
+                "database", "sample_sales",
+                "username", "reader",
+                "password", "reader-secret-password",
+                "dialect", DataSourceDialect.MYSQL,
+                "maxRows", 1000,
+                "timeoutSeconds", 30));
     }
 
     private static RequestPostProcessor as(Role role) {
@@ -94,23 +111,44 @@ class DataSourceControllerSecurityTest {
     static class TestConfiguration {
         @Bean
         DataSourceApplicationService dataSourceApplicationService() {
-            return new DataSourceApplicationService(new MemoryRepository(), event -> { });
+            return new DataSourceApplicationService(new MemoryRepository(), event -> { },
+                    (tenant, dataSource, secret) -> "credential/" + dataSource,
+                    new NoopExternalPool());
         }
     }
 
     static class MemoryRepository implements DataSourceRepository {
         private final List<DataSourceView> values = new ArrayList<>();
-        public DataSourceView save(UUID tenantId, DataSourceCommand command) {
-            DataSourceView value = new DataSourceView(UUID.randomUUID(), command.name(), command.host(), command.port(),
-                    command.database(), command.username(), command.credentialRef(), command.dialect(), DataSourceStatus.DRAFT,
+        public DataSourceView save(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef) {
+            DataSourceView value = new DataSourceView(id, command.name(), command.host(), command.port(),
+                    command.database(), command.username(), credentialRef, command.dialect(), DataSourceStatus.DRAFT,
                     command.maxRows(), command.timeoutSeconds());
             values.add(value);
             return value;
         }
         public List<DataSourceView> findAllByTenant(UUID tenantId) { return List.copyOf(values); }
         public Optional<DataSourceView> findByTenantAndId(UUID tenantId, UUID id) { return values.stream().filter(value -> value.id().equals(id)).findFirst(); }
-        public DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command) { throw new UnsupportedOperationException(); }
-        public DataSourceView updateStatus(UUID tenantId, UUID id, DataSourceStatus status) { throw new UnsupportedOperationException(); }
+        public DataSourceView update(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef) { throw new UnsupportedOperationException(); }
+        public DataSourceView transitionStatus(
+                UUID tenantId, UUID id, DataSourceStatus expected, DataSourceStatus target) {
+            throw new UnsupportedOperationException();
+        }
         public void disable(UUID tenantId, UUID id) { throw new UnsupportedOperationException(); }
+    }
+
+    static final class NoopExternalPool implements com.jizhaoyu.chatbi.application.datasource.ExternalDataSourcePool {
+        @Override
+        public javax.sql.DataSource getOrCreate(
+                com.jizhaoyu.chatbi.application.datasource.ExternalDataSourceConnectionSpec connectionSpec) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void destroy(UUID tenantId, UUID dataSourceId) {
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }

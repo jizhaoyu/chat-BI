@@ -20,6 +20,11 @@
 - `SAMPLE_ANALYSIS_ENABLED=true`：仅在需要连接固定样例库时开启。
 - `BOOTSTRAP_IDENTITY_ENABLED=true`：首次本地启动时创建数据管理员；共享或生产环境应关闭。
 - `BOOTSTRAP_DATA_ADMIN_USERNAME` / `BOOTSTRAP_DATA_ADMIN_PASSWORD`：首次本地数据管理员，密码至少 12 位且仅从环境读取。
+- `DATASOURCE_ENCRYPTION_KEY_ID`：当前数据源凭据加密密钥版本，例如 `local-v1`；轮换时必须保留旧版本用于解密。
+- `DATASOURCE_ENCRYPTION_KEY_BASE64`：32 字节随机密钥的 Base64 编码。不得提交真实值；可用 `openssl rand -base64 32` 或等效密码学随机源生成。
+- `DATASOURCE_ENCRYPTION_OLD_KEYS`：可选旧密钥环，格式为 `keyId:base64,keyId:base64`。轮换时先把旧活动密钥加入这里，再设置新的 `KEY_ID/KEY_BASE64`；确认历史凭据已重加密前不得删除旧密钥。
+
+外部数据源主机必须解析到公网地址；回环、私网、链路本地、CGNAT、组播和未指定地址会被拒绝。内网数据库接入属于后续需显式设计网络代理/允许清单的范围，不能通过关闭 SSRF 校验实现。
 
 Compose 中的默认密码只用于本地一次性样例环境，不得用于共享或生产环境。修改初始化密码后，如已有旧数据卷，需要执行 `docker compose down --volumes` 重建本地样例数据；该命令会删除本项目 Compose 创建的两个本地数据库卷。
 
