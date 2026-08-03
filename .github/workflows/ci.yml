@@ -47,11 +47,11 @@ jobs:
       - name: Verify sample reader can query
         run: |
           docker exec -e MYSQL_PWD="$SAMPLE_DB_PASSWORD" chatbi-sample-sales-mysql \
-            mysql -uchatbi_reader -Dsample_sales -e "SELECT COUNT(*) FROM fact_order"
+            mysql --protocol=TCP -h127.0.0.1 -uchatbi_reader -Dsample_sales -e "SELECT COUNT(*) FROM fact_order"
       - name: Verify sample reader cannot write
         run: |
           if docker exec -e MYSQL_PWD="$SAMPLE_DB_PASSWORD" chatbi-sample-sales-mysql \
-            mysql -uchatbi_reader -Dsample_sales -e "INSERT INTO dim_region VALUES (99, 'X', 'X', 'X')"; then
+            mysql --protocol=TCP -h127.0.0.1 -uchatbi_reader -Dsample_sales -e "INSERT INTO dim_region VALUES (99, 'X', 'X', 'X')"; then
             echo "read-only account unexpectedly accepted a write" >&2
             exit 1
           fi
