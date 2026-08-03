@@ -44,3 +44,9 @@ app:
       username: ${SAMPLE_DB_USERNAME:chatbi_reader}
       password: ${SAMPLE_DB_PASSWORD:}
       maximum-pool-size: ${SAMPLE_DB_POOL_SIZE:3}
+  query:
+    concurrency:
+      global: ${QUERY_GLOBAL_CONCURRENCY:16}
+      tenant: ${QUERY_TENANT_CONCURRENCY:8}
+      data-source: ${QUERY_DATASOURCE_CONCURRENCY:3}
+      user: ${QUERY_USER_CONCURRENCY:2}

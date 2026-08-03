@@ -5,14 +5,17 @@ import com.jizhaoyu.chatbi.domain.identity.UserPrincipal;
 
 public final class QueryExecutionService {
     private final QueryExecutionPreparationService preparation;
+    private final QueryExecutionLimiter limiter;
     private final ApprovedQueryExecutor executor;
     private final QueryExecutionCompletionService completion;
 
     public QueryExecutionService(
             QueryExecutionPreparationService preparation,
+            QueryExecutionLimiter limiter,
             ApprovedQueryExecutor executor,
             QueryExecutionCompletionService completion) {
         this.preparation = preparation;
+        this.limiter = limiter;
         this.executor = executor;
         this.completion = completion;
     }
@@ -21,7 +24,9 @@ public final class QueryExecutionService {
         requireExecutorRole(actor);
         PreparedQueryExecution prepared = preparation.prepare(actor, approvalId);
         QueryExecutionResult result;
-        try {
+        try (QueryExecutionLimiter.Permit ignored = limiter.tryAcquire(prepared.query())
+                .orElseThrow(() -> new QueryExecutionFailure(
+                        QueryExecutionStatus.FAILED, "QUERY_CONCURRENCY_EXCEEDED"))) {
             result = executor.execute(prepared.query());
         } catch (QueryExecutionFailure failure) {
             completion.complete(actor, prepared, failure.status(), 0, false, failure.getMessage(), "");

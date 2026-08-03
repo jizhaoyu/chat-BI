@@ -339,6 +339,7 @@ class DatabaseIsolationIT {
         };
         QueryExecutionService service = new QueryExecutionService(
                 queryExecutionPreparation,
+                query -> java.util.Optional.of(() -> { }),
                 new MySqlApprovedQueryExecutor(dataSourceRepository, credentialVault, testPool),
                 queryExecutionCompletion);
 

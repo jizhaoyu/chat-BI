@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -44,6 +45,7 @@ class QueryExecutionServiceTest {
         RecordingExecutions executions = new RecordingExecutions();
         QueryExecutionService service = new QueryExecutionService(
                 preparation(approvals),
+                permissiveLimiter(),
                 query -> {
                     events.add("execute");
                     assertThat(events).containsSubsequence("claim-and-start", "execute");
@@ -57,7 +59,8 @@ class QueryExecutionServiceTest {
 
         assertThat(response.status()).isEqualTo(QueryExecutionStatus.SUCCEEDED);
         assertThat(events).containsSubsequence(
-                "claim-and-start", "QUERY_EXECUTION_STARTED", "execute", "QUERY_EXECUTION_SUCCEEDED");
+                "claim-and-start", "QUERY_EXECUTION_STARTED", "execute", "permit-released",
+                "QUERY_EXECUTION_SUCCEEDED");
         assertThat(executions.status).isEqualTo(QueryExecutionStatus.SUCCEEDED);
         assertThat(executions.rowCount).isEqualTo(1);
     }
@@ -69,6 +72,7 @@ class QueryExecutionServiceTest {
         String token = issue(approvals, envelope);
         QueryExecutionService service = new QueryExecutionService(
                 preparation(approvals),
+                permissiveLimiter(),
                 query -> {
                     events.add("execute");
                     throw new AssertionError("executor must not be called");
@@ -89,6 +93,7 @@ class QueryExecutionServiceTest {
         QueryExecutionService service = new QueryExecutionService(
                 new QueryExecutionPreparationService(
                         approvals, event -> events.add(event.detailJson()), Clock.fixed(NOW, ZoneOffset.UTC)),
+                permissiveLimiter(),
                 query -> { throw new IllegalStateException("jdbc:mysql://secret/ raw SQL password"); },
                 new QueryExecutionCompletionService(
                         executions, event -> events.add(event.detailJson()),
@@ -98,7 +103,27 @@ class QueryExecutionServiceTest {
                 .isInstanceOf(QueryExecutionFailure.class).hasMessage("QUERY_EXECUTION_FAILED");
         assertThat(executions.status).isEqualTo(QueryExecutionStatus.FAILED);
         assertThat(executions.errorCode).isEqualTo("QUERY_EXECUTION_FAILED");
+        assertThat(events).contains("permit-released");
         assertThat(events).allMatch(detail -> !detail.contains("jdbc:mysql") && !detail.contains("password"));
+    }
+
+    @Test
+    void recordsFailureWithoutCallingExecutorWhenConcurrencyIsExhausted() {
+        QueryApprovalService approvals = approvals(new MemoryApprovals(false));
+        String token = issue(approvals, envelope);
+        RecordingExecutions executions = new RecordingExecutions();
+        QueryExecutionService service = new QueryExecutionService(
+                preparation(approvals),
+                query -> Optional.empty(),
+                query -> { throw new AssertionError("executor must not be called"); },
+                completion(executions));
+
+        assertThatThrownBy(() -> service.execute(actor, token))
+                .isInstanceOf(QueryExecutionFailure.class)
+                .hasMessage("QUERY_CONCURRENCY_EXCEEDED");
+        assertThat(executions.status).isEqualTo(QueryExecutionStatus.FAILED);
+        assertThat(executions.errorCode).isEqualTo("QUERY_CONCURRENCY_EXCEEDED");
+        assertThat(events).doesNotContain("execute");
     }
 
     private QueryApprovalService approvals(QueryApprovalRepository repository) {
@@ -115,6 +140,10 @@ class QueryExecutionServiceTest {
         return new QueryExecutionCompletionService(
                 executions, event -> events.add(event.action()),
                 Clock.fixed(NOW.plusMillis(25), ZoneOffset.UTC));
+    }
+
+    private QueryExecutionLimiter permissiveLimiter() {
+        return query -> Optional.of(() -> events.add("permit-released"));
     }
 
     private static String issue(QueryApprovalService service, QueryApprovalEnvelope envelope) {

@@ -2,6 +2,7 @@ package com.jizhaoyu.chatbi.interfaces.query;
 
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionResponse;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionResult;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionFailure;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionService;
 import com.jizhaoyu.chatbi.application.execution.QueryExecutionStatus;
 import com.jizhaoyu.chatbi.domain.identity.Role;
@@ -73,6 +74,19 @@ class QueryExecutionControllerTest {
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("DROP TABLE"))));
+    }
+
+    @Test
+    void mapsConcurrencyExhaustionToTooManyRequests() throws Exception {
+        UserPrincipal principal = new UserPrincipal(UUID.randomUUID(), UUID.randomUUID(), Set.of(Role.ANALYST));
+        when(service.execute(principal, APPROVAL)).thenThrow(
+                new QueryExecutionFailure(QueryExecutionStatus.FAILED, "QUERY_CONCURRENCY_EXCEEDED"));
+
+        mvc.perform(post("/api/v1/approved-queries/{approvalId}:execute", APPROVAL)
+                        .with(csrf()).with(authentication(new UsernamePasswordAuthenticationToken(
+                                principal, null, SecurityConfiguration.authorities(principal)))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("QUERY_CONCURRENCY_EXCEEDED"));
     }
 
     @Configuration

@@ -17,8 +17,14 @@ import java.util.Map;
 public class GlobalExceptionHandler {
     @ExceptionHandler(QueryExecutionFailure.class)
     ResponseEntity<ApiError> queryExecution(QueryExecutionFailure exception) {
-        HttpStatus status = exception.status() == QueryExecutionStatus.TIMEOUT
-                ? HttpStatus.REQUEST_TIMEOUT : HttpStatus.BAD_GATEWAY;
+        HttpStatus status;
+        if (exception.status() == QueryExecutionStatus.TIMEOUT) {
+            status = HttpStatus.REQUEST_TIMEOUT;
+        } else if ("QUERY_CONCURRENCY_EXCEEDED".equals(exception.getMessage())) {
+            status = HttpStatus.TOO_MANY_REQUESTS;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
         return ResponseEntity.status(status).body(new ApiError(exception.getMessage(), "Query execution failed", null));
     }
 
