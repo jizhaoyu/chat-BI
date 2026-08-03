@@ -10,8 +10,5 @@ mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
 CREATE USER IF NOT EXISTS 'chatbi_reader'@'%' IDENTIFIED BY '${SAMPLE_READER_PASSWORD}';
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'chatbi_reader'@'%';
 GRANT SELECT ON sample_sales.* TO 'chatbi_reader'@'%';
-CREATE USER IF NOT EXISTS 'chatbi_reader'@'localhost' IDENTIFIED BY '${SAMPLE_READER_PASSWORD}';
-REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'chatbi_reader'@'localhost';
-GRANT SELECT ON sample_sales.* TO 'chatbi_reader'@'localhost';
 FLUSH PRIVILEGES;
 SQL
