@@ -10,7 +10,11 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,7 +27,7 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
     }
 
     @Override
-    @Transactional
+    @Transactional(transactionManager = "platformTransactionManager")
     public void save(byte[] tokenHash, QueryApprovalEnvelope envelope) {
         jdbc.update("INSERT INTO query_approval "
                         + "(id, token_hash, tenant_id, user_id, data_source_id, metadata_snapshot_id, "
@@ -47,20 +51,25 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
     }
 
     @Override
-    @Transactional
-    public QueryApprovalEnvelope consume(
-            byte[] tokenHash, UserPrincipal actor, Instant now, String currentRuleVersion) {
+    @Transactional(transactionManager = "platformTransactionManager")
+    public QueryApprovalEnvelope consumeAndStart(
+            byte[] tokenHash, UserPrincipal actor, Instant now, String currentRuleVersion, UUID executionId) {
         List<ApprovalRow> rows = jdbc.query("SELECT a.id, a.tenant_id, a.user_id, a.data_source_id, "
                         + "a.metadata_snapshot_id, a.data_source_version, a.authorization_version, "
                         + "a.rule_version, a.policy_hash, a.normalized_sql, a.sql_hash, a.parameter_hash, "
                         + "a.maximum_rows, a.timeout_seconds, a.status, a.expires_at, "
                         + "d.version AS current_source_version, d.authorization_version AS current_auth_version, "
-                        + "d.status AS source_status, s.status AS snapshot_status "
+                        + "d.status AS source_status, d.max_rows AS current_max_rows, "
+                        + "d.timeout_seconds AS current_timeout_seconds, s.status AS snapshot_status "
                         + "FROM query_approval a "
                         + "JOIN data_source d ON d.tenant_id = a.tenant_id AND d.id = a.data_source_id "
                         + "JOIN catalog_snapshot s ON s.tenant_id = a.tenant_id AND s.id = a.metadata_snapshot_id "
                         + "AND s.data_source_id = a.data_source_id "
-                        + "WHERE a.token_hash = ? FOR UPDATE",
+                        + "WHERE a.token_hash = ? "
+                        + "AND EXISTS (SELECT 1 FROM app_user u WHERE u.tenant_id = a.tenant_id "
+                        + "AND u.id = a.user_id AND u.enabled = TRUE) "
+                        + "AND EXISTS (SELECT 1 FROM app_user_role r WHERE r.user_id = a.user_id "
+                        + "AND r.role_name IN ('ANALYST', 'DATA_ADMIN')) FOR UPDATE",
                 (row, number) -> new ApprovalRow(
                         UUID.fromString(row.getString("id")), UUID.fromString(row.getString("tenant_id")),
                         UUID.fromString(row.getString("user_id")), UUID.fromString(row.getString("data_source_id")),
@@ -72,6 +81,7 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
                         row.getInt("timeout_seconds"), row.getString("status"),
                         row.getTimestamp("expires_at").toInstant(), row.getLong("current_source_version"),
                         row.getLong("current_auth_version"), row.getString("source_status"),
+                        row.getInt("current_max_rows"), row.getInt("current_timeout_seconds"),
                         row.getString("snapshot_status")),
                 tokenHash);
         if (rows.size() != 1) {
@@ -85,6 +95,11 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
         if (changed != 1) {
             throw new SecurityException("APPROVAL_ALREADY_USED");
         }
+        jdbc.update("INSERT INTO query_execution "
+                        + "(id, tenant_id, approval_id, executor_user_id, data_source_id, status, started_at) "
+                        + "VALUES (?, ?, ?, ?, ?, 'RUNNING', ?)",
+                executionId.toString(), actor.tenantId().toString(), row.id().toString(),
+                actor.userId().toString(), row.dataSourceId().toString(), Timestamp.from(now));
         List<SqlObjectReference> references = jdbc.query(
                 "SELECT table_id, column_id, schema_name, table_name, column_name "
                         + "FROM query_approval_reference WHERE approval_id = ? ORDER BY ordinal_no",
@@ -111,6 +126,10 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
         if (!currentRuleVersion.equals(row.ruleVersion())
                 || row.dataSourceVersion() != row.currentDataSourceVersion()
                 || row.authorizationVersion() != row.currentAuthorizationVersion()
+                || !row.sqlHash().equals(sha256(row.normalizedSql()))
+                || !row.parameterHash().equals(sha256("[]"))
+                || !row.policyHash().equals(sha256(currentRuleVersion + ":"
+                        + row.currentMaximumRows() + ":" + row.currentTimeoutSeconds()))
                 || !"READY".equals(row.sourceStatus()) || !"ACTIVE".equals(row.snapshotStatus())) {
             throw new SecurityException("APPROVAL_INVALID");
         }
@@ -121,11 +140,20 @@ public class JdbcQueryApprovalRepository implements QueryApprovalRepository {
             long dataSourceVersion, long authorizationVersion, String ruleVersion, String policyHash,
             String normalizedSql, String sqlHash, String parameterHash, int maximumRows, int timeoutSeconds,
             String status, Instant expiresAt, long currentDataSourceVersion, long currentAuthorizationVersion,
-            String sourceStatus, String snapshotStatus) {
+            String sourceStatus, int currentMaximumRows, int currentTimeoutSeconds, String snapshotStatus) {
         QueryApprovalEnvelope toEnvelope(List<SqlObjectReference> references) {
             return new QueryApprovalEnvelope(id, tenantId, userId, dataSourceId, metadataSnapshotId,
                     dataSourceVersion, authorizationVersion, ruleVersion, policyHash, normalizedSql, sqlHash,
                     parameterHash, maximumRows, timeoutSeconds, references, expiresAt);
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA_256_UNAVAILABLE", impossible);
         }
     }
 }

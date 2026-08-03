@@ -6,6 +6,7 @@ import com.jizhaoyu.chatbi.domain.catalog.CatalogSnapshot;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogSnapshotStatus;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogTable;
 import com.jizhaoyu.chatbi.domain.catalog.SemanticMetadata;
+import com.jizhaoyu.chatbi.domain.catalog.SensitivityLevel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -28,7 +29,7 @@ class JSqlParserSqlGuardTest {
         var result = guard.validate(
                 "SELECT id, total_amount FROM sample_sales.fact_order WHERE status = 'PAID'", context);
 
-        assertThat(result.normalizedSql()).endsWith("LIMIT 200");
+        assertThat(result.normalizedSql()).endsWith("LIMIT 201");
         assertThat(result.effectiveLimit()).isEqualTo(200);
         assertThat(result.references()).extracting(reference -> reference.columnName())
                 .containsExactly("id", "total_amount", "status");
@@ -56,8 +57,34 @@ class JSqlParserSqlGuardTest {
     void tightensExcessiveLimitWithoutIncreasingSmallerLimit() {
         assertThat(guard.validate("SELECT id FROM fact_order LIMIT 100000", context).effectiveLimit())
                 .isEqualTo(200);
+        assertThat(guard.validate("SELECT id FROM fact_order LIMIT 100000", context).normalizedSql())
+                .endsWith("LIMIT 201");
         assertThat(guard.validate("SELECT id FROM fact_order LIMIT 5", context).effectiveLimit())
                 .isEqualTo(5);
+        assertThat(guard.validate("SELECT id FROM fact_order LIMIT 5", context).normalizedSql())
+                .endsWith("LIMIT 5");
+    }
+
+    @Test
+    void rejectsProtectedColumnsInProjectionButAllowsAuthorizedFiltering() {
+        SqlGuardContext protectedContext = new SqlGuardContext(catalogWithProtectedColumn(), 200);
+
+        assertThatThrownBy(() -> guard.validate("SELECT customer_token FROM fact_order", protectedContext))
+                .isInstanceOf(SecurityException.class)
+                .hasMessage("SQL_SENSITIVE_PROJECTION_FORBIDDEN");
+        assertThat(guard.validate(
+                "SELECT id FROM fact_order WHERE customer_token = 'token'", protectedContext).references())
+                .extracting(reference -> reference.columnName())
+                .containsExactly("id", "customer_token");
+    }
+
+    @Test
+    void appliesTableSensitivityToEveryProjectedColumn() {
+        SqlGuardContext protectedContext = new SqlGuardContext(catalogWithProtectedTable(), 200);
+
+        assertThatThrownBy(() -> guard.validate("SELECT id FROM fact_order", protectedContext))
+                .isInstanceOf(SecurityException.class)
+                .hasMessage("SQL_SENSITIVE_PROJECTION_FORBIDDEN");
     }
 
     @ParameterizedTest
@@ -111,6 +138,38 @@ class JSqlParserSqlGuardTest {
         CatalogTable products = table(tenant, snapshot, "dim_product", "id", "category");
         return new CatalogSnapshot(snapshot, tenant, source, 1, CatalogSnapshotStatus.ACTIVE,
                 List.of(orders, stores, products), List.of(), Instant.EPOCH, Instant.EPOCH);
+    }
+
+    private static CatalogSnapshot catalogWithProtectedColumn() {
+        UUID tenant = UUID.randomUUID();
+        UUID source = UUID.randomUUID();
+        UUID snapshot = UUID.randomUUID();
+        UUID tableId = UUID.randomUUID();
+        List<CatalogColumn> columns = List.of(
+                column(tenant, tableId, "id", 1, SensitivityLevel.PUBLIC),
+                column(tenant, tableId, "customer_token", 2, SensitivityLevel.SENSITIVE));
+        CatalogTable orders = new CatalogTable(tableId, tenant, snapshot, "sample_sales", "fact_order", "",
+                SemanticMetadata.physicalOnly(), true, columns);
+        return new CatalogSnapshot(snapshot, tenant, source, 1, CatalogSnapshotStatus.ACTIVE,
+                List.of(orders), List.of(), Instant.EPOCH, Instant.EPOCH);
+    }
+
+    private static CatalogSnapshot catalogWithProtectedTable() {
+        UUID tenant = UUID.randomUUID();
+        UUID source = UUID.randomUUID();
+        UUID snapshot = UUID.randomUUID();
+        UUID tableId = UUID.randomUUID();
+        CatalogTable orders = new CatalogTable(tableId, tenant, snapshot, "sample_sales", "fact_order", "",
+                new SemanticMetadata("", List.of(), SensitivityLevel.SECRET), true,
+                List.of(column(tenant, tableId, "id", 1, SensitivityLevel.PUBLIC)));
+        return new CatalogSnapshot(snapshot, tenant, source, 1, CatalogSnapshotStatus.ACTIVE,
+                List.of(orders), List.of(), Instant.EPOCH, Instant.EPOCH);
+    }
+
+    private static CatalogColumn column(
+            UUID tenant, UUID tableId, String name, int ordinal, SensitivityLevel sensitivity) {
+        return new CatalogColumn(UUID.randomUUID(), tenant, tableId, name, "VARCHAR", true, ordinal, "",
+                new SemanticMetadata("", List.of(), sensitivity), true);
     }
 
     private static CatalogTable table(UUID tenant, UUID snapshot, String name, String... columns) {

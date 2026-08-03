@@ -64,6 +64,8 @@ public final class SecureExternalDataSourcePool implements ExternalDataSourcePoo
         config.addDataSourceProperty("readOnlyPropagatesToServer", "true");
         config.addDataSourceProperty("connectTimeout", spec.connectionTimeoutSeconds() * 1_000);
         config.addDataSourceProperty("socketTimeout", spec.connectionTimeoutSeconds() * 1_000);
+        config.addDataSourceProperty("useCursorFetch", "true");
+        config.addDataSourceProperty("defaultFetchSize", "500");
         return new HikariDataSource(config);
     }
 

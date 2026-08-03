@@ -33,7 +33,7 @@ public record QueryApprovalEnvelope(
         normalizedSql = requireText(normalizedSql);
         sqlHash = requireText(sqlHash);
         parameterHash = requireText(parameterHash);
-        if (maximumRows < 0 || timeoutSeconds < 1) {
+        if (maximumRows < 1 || timeoutSeconds < 1) {
             throw new IllegalArgumentException("SQL_APPROVAL_RESOURCE_LIMIT_INVALID");
         }
         references = List.copyOf(Objects.requireNonNull(references, "references"));

@@ -15,6 +15,11 @@ import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalRepository;
 import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalService;
 import com.jizhaoyu.chatbi.application.sqlguard.SqlGuardPort;
 import com.jizhaoyu.chatbi.application.sqlguard.SqlValidationService;
+import com.jizhaoyu.chatbi.application.execution.ApprovedQueryExecutor;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionRepository;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionService;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionPreparationService;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionCompletionService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -67,6 +72,27 @@ public class ApplicationConfiguration {
             AuditPort auditPort) {
         return new SqlValidationService(
                 dataSources, snapshots, permissions, sqlGuard, approvals, auditPort, Clock.systemUTC());
+    }
+
+    @Bean
+    QueryExecutionPreparationService queryExecutionPreparationService(
+            QueryApprovalService approvals,
+            AuditPort auditPort) {
+        return new QueryExecutionPreparationService(approvals, auditPort, Clock.systemUTC());
+    }
+
+    @Bean
+    QueryExecutionCompletionService queryExecutionCompletionService(
+            QueryExecutionRepository executions, AuditPort auditPort) {
+        return new QueryExecutionCompletionService(executions, auditPort, Clock.systemUTC());
+    }
+
+    @Bean
+    QueryExecutionService queryExecutionService(
+            QueryExecutionPreparationService preparation,
+            ApprovedQueryExecutor executor,
+            QueryExecutionCompletionService completion) {
+        return new QueryExecutionService(preparation, executor, completion);
     }
 
     @Bean

@@ -6,6 +6,7 @@ import com.jizhaoyu.chatbi.application.sqlguard.SqlGuardResult;
 import com.jizhaoyu.chatbi.application.sqlguard.SqlObjectReference;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogColumn;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogTable;
+import com.jizhaoyu.chatbi.domain.catalog.SensitivityLevel;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.BinaryExpression;
 import net.sf.jsqlparser.expression.BooleanValue;
@@ -94,7 +95,12 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
             if (item.getExpression() instanceof AllColumns || item.getExpression() instanceof AllTableColumns) {
                 throw new IllegalArgumentException("SQL_WILDCARD_FORBIDDEN");
             }
-            collector.collect(item.getExpression());
+            ReferenceCollector projectionCollector = new ReferenceCollector(scope);
+            projectionCollector.collect(item.getExpression());
+            if (projectionCollector.containsProtectedColumn()) {
+                throw new SecurityException("SQL_SENSITIVE_PROJECTION_FORBIDDEN");
+            }
+            collector.addAll(projectionCollector.references());
             if (item.getAlias() != null
                     && projectionAliases.putIfAbsent(normalize(item.getAlias().getName()), item.getExpression()) != null) {
                 throw new IllegalArgumentException("SQL_IDENTIFIER_AMBIGUOUS");
@@ -239,7 +245,7 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
     private static int tightenLimit(PlainSelect plain, int maximumRows) {
         Limit limit = plain.getLimit();
         if (limit == null) {
-            plain.setLimit(new Limit().withRowCount(new net.sf.jsqlparser.expression.LongValue(maximumRows)));
+            plain.setLimit(new Limit().withRowCount(new net.sf.jsqlparser.expression.LongValue(maximumRows + 1L)));
             return maximumRows;
         }
         if (limit.getOffset() != null || !(limit.getRowCount() instanceof net.sf.jsqlparser.expression.LongValue value)
@@ -247,7 +253,9 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
             throw new IllegalArgumentException("SQL_LIMIT_INVALID");
         }
         int effective = (int) Math.min(value.getValue(), maximumRows);
-        limit.setRowCount(new net.sf.jsqlparser.expression.LongValue(effective));
+        if (value.getValue() > maximumRows) {
+            limit.setRowCount(new net.sf.jsqlparser.expression.LongValue(maximumRows + 1L));
+        }
         return effective;
     }
 
@@ -268,7 +276,7 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
             this.aliases = Map.copyOf(aliases);
         }
 
-        SqlObjectReference resolve(Column sqlColumn) {
+        ResolvedColumn resolve(Column sqlColumn) {
             String qualifier = sqlColumn.getTable() == null ? null : normalize(sqlColumn.getTable().getName());
             String name = normalize(sqlColumn.getColumnName());
             List<Map.Entry<CatalogTable, CatalogColumn>> matches = new ArrayList<>();
@@ -285,14 +293,26 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
                         ? "SQL_COLUMN_FORBIDDEN" : "SQL_IDENTIFIER_AMBIGUOUS");
             }
             Map.Entry<CatalogTable, CatalogColumn> match = matches.getFirst();
-            return new SqlObjectReference(match.getKey().id(), match.getValue().id(),
-                    match.getKey().schemaName(), match.getKey().name(), match.getValue().name());
+            return new ResolvedColumn(new SqlObjectReference(match.getKey().id(), match.getValue().id(),
+                    match.getKey().schemaName(), match.getKey().name(), match.getValue().name()),
+                    mostRestrictive(match.getKey().semantic().sensitivity(),
+                            match.getValue().semantic().sensitivity()));
         }
+
+        private static SensitivityLevel mostRestrictive(
+                SensitivityLevel tableSensitivity, SensitivityLevel columnSensitivity) {
+            return tableSensitivity.ordinal() >= columnSensitivity.ordinal()
+                    ? tableSensitivity : columnSensitivity;
+        }
+    }
+
+    private record ResolvedColumn(SqlObjectReference reference, SensitivityLevel sensitivity) {
     }
 
     private static final class ReferenceCollector {
         private final QueryScope scope;
         private final Map<String, SqlObjectReference> references = new LinkedHashMap<>();
+        private boolean containsProtectedColumn;
 
         private ReferenceCollector(QueryScope scope) {
             this.scope = scope;
@@ -378,8 +398,11 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
         }
 
         private void collectColumn(Column column) {
-            SqlObjectReference reference = scope.resolve(column);
+            ResolvedColumn resolved = scope.resolve(column);
+            SqlObjectReference reference = resolved.reference();
             references.putIfAbsent(reference.tableId() + ":" + reference.columnId(), reference);
+            containsProtectedColumn |= resolved.sensitivity() == SensitivityLevel.SENSITIVE
+                    || resolved.sensitivity() == SensitivityLevel.SECRET;
         }
 
         private void collectFunction(Function function) {
@@ -423,6 +446,15 @@ public class JSqlParserSqlGuard implements SqlGuardPort {
 
         List<SqlObjectReference> references() {
             return List.copyOf(references.values());
+        }
+
+        void addAll(List<SqlObjectReference> additionalReferences) {
+            additionalReferences.forEach(reference -> references.putIfAbsent(
+                    reference.tableId() + ":" + reference.columnId(), reference));
+        }
+
+        boolean containsProtectedColumn() {
+            return containsProtectedColumn;
         }
 
         private static IllegalArgumentException forbidden(String code) {

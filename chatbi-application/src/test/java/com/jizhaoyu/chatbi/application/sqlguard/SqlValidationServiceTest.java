@@ -134,7 +134,8 @@ class SqlValidationServiceTest {
     private static final class MemoryApprovalRepository implements QueryApprovalRepository {
         private QueryApprovalEnvelope envelope;
         @Override public void save(byte[] tokenHash, QueryApprovalEnvelope envelope) { this.envelope = envelope; }
-        @Override public QueryApprovalEnvelope consume(byte[] tokenHash, UserPrincipal actor, Instant now, String rule) {
+        @Override public QueryApprovalEnvelope consumeAndStart(
+                byte[] tokenHash, UserPrincipal actor, Instant now, String rule, UUID executionId) {
             throw unsupported();
         }
     }

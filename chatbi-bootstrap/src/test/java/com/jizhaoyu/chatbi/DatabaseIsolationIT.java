@@ -10,6 +10,12 @@ import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalEnvelope;
 import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalRepository;
 import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalService;
 import com.jizhaoyu.chatbi.application.sqlguard.SqlValidationService;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionService;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionStatus;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionPreparationService;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionCompletionService;
+import com.jizhaoyu.chatbi.application.datasource.ExternalDataSourcePool;
+import com.jizhaoyu.chatbi.infrastructure.execution.MySqlApprovedQueryExecutor;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogColumn;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogObjectType;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogPermission;
@@ -87,6 +93,8 @@ class DatabaseIsolationIT {
     @Autowired CatalogSnapshotRepository catalogSnapshots;
     @Autowired CatalogPermissionRepository catalogPermissions;
     @Autowired QueryApprovalRepository queryApprovals;
+    @Autowired QueryExecutionPreparationService queryExecutionPreparation;
+    @Autowired QueryExecutionCompletionService queryExecutionCompletion;
     @Autowired @Qualifier("platformJdbcTemplate") JdbcTemplate platformJdbc;
 
     @DynamicPropertySource
@@ -265,6 +273,8 @@ class DatabaseIsolationIT {
         platformJdbc.update("INSERT INTO app_user(id, tenant_id, username, password_hash, enabled) "
                         + "VALUES (?, ?, ?, '{noop}test', TRUE)",
                 subject.toString(), tenant.toString(), "approval-user-" + subject);
+        platformJdbc.update("INSERT INTO app_user_role(user_id, role_name) VALUES (?, 'ANALYST')",
+                subject.toString());
         var source = insertReadyDataSource(tenant);
         CatalogSnapshot syncing = syncingSnapshot(tenant, source.id(), UUID.randomUUID(), 1, "fact_order");
         catalogSnapshots.beginSync(tenant, source.id(), syncing.id(), Instant.now());
@@ -281,8 +291,12 @@ class DatabaseIsolationIT {
                 "SELECT token_hash FROM query_approval WHERE id = ?", byte[].class, first.id().toString());
         assertThat(storedHash).hasSize(32);
         assertThat(HexFormat.of().formatHex(storedHash)).doesNotContain(firstToken);
-        assertThat(service.claim(actor, firstToken).normalizedSql()).isEqualTo(first.normalizedSql());
-        assertThatThrownBy(() -> service.claim(actor, firstToken))
+        UUID firstExecution = UUID.randomUUID();
+        assertThat(service.claimAndStart(actor, firstToken, firstExecution).normalizedSql())
+                .isEqualTo(first.normalizedSql());
+        assertThat(platformJdbc.queryForObject("SELECT status FROM query_execution WHERE id = ?",
+                String.class, firstExecution.toString())).isEqualTo("RUNNING");
+        assertThatThrownBy(() -> service.claimAndStart(actor, firstToken, UUID.randomUUID()))
                 .isInstanceOf(SecurityException.class).hasMessage("APPROVAL_ALREADY_USED");
 
         QueryApprovalEnvelope stale = approvalEnvelope(actor, source.id(), active.id(), source.version(), 0);
@@ -291,16 +305,66 @@ class DatabaseIsolationIT {
                 source.id(), CatalogObjectType.TABLE, active.tables().getFirst().id(), "");
         catalogPermissions.replace(tenant, subject, source.id(), List.of(tableGrant));
 
-        assertThatThrownBy(() -> service.claim(actor, staleToken))
+        assertThatThrownBy(() -> service.claimAndStart(actor, staleToken, UUID.randomUUID()))
                 .isInstanceOf(SecurityException.class).hasMessage("APPROVAL_INVALID");
+    }
+
+    @Test
+    void executesApprovedQueryOnceAndPersistsSanitizedTerminalState() {
+        UUID tenant = insertTenant();
+        UUID subject = UUID.randomUUID();
+        platformJdbc.update("INSERT INTO app_user(id, tenant_id, username, password_hash, enabled) "
+                        + "VALUES (?, ?, ?, '{noop}test', TRUE)",
+                subject.toString(), tenant.toString(), "executor-user-" + subject);
+        platformJdbc.update("INSERT INTO app_user_role(user_id, role_name) VALUES (?, 'ANALYST')",
+                subject.toString());
+        var source = insertReadyDataSource(tenant);
+        CatalogSnapshot syncing = syncingSnapshot(tenant, source.id(), UUID.randomUUID(), 1, "fact_order");
+        catalogSnapshots.beginSync(tenant, source.id(), syncing.id(), Instant.now());
+        CatalogSnapshot active = catalogSnapshots.completeAndActivate(syncing);
+        UserPrincipal actor = new UserPrincipal(subject, tenant, java.util.Set.of(Role.ANALYST));
+        QueryApprovalService approvals = new QueryApprovalService(
+                queryApprovals, Clock.systemUTC(), Duration.ofMinutes(2), SqlValidationService.RULE_VERSION);
+        QueryApprovalEnvelope envelope = approvalEnvelope(
+                actor, source.id(), active.id(), source.version(), source.authorizationVersion());
+        String token = invokeIssue(approvals, envelope);
+
+        ExternalDataSourcePool testPool = new ExternalDataSourcePool() {
+            @Override public DataSource getOrCreate(
+                    com.jizhaoyu.chatbi.application.datasource.ExternalDataSourceConnectionSpec spec) {
+                return analysisDataSource;
+            }
+            @Override public void destroy(UUID tenantId, UUID dataSourceId) { }
+            @Override public void close() { }
+        };
+        QueryExecutionService service = new QueryExecutionService(
+                queryExecutionPreparation,
+                new MySqlApprovedQueryExecutor(dataSourceRepository, credentialVault, testPool),
+                queryExecutionCompletion);
+
+        var response = service.execute(actor, token);
+
+        assertThat(response.status()).isEqualTo(QueryExecutionStatus.SUCCEEDED);
+        assertThat(response.result().rows()).containsExactly(List.of(1L), List.of(2L));
+        assertThat(response.result().resultDigest()).hasSize(64);
+        assertThat(platformJdbc.queryForMap("SELECT status, row_count, truncated, error_code, result_digest "
+                        + "FROM query_execution WHERE id = ?", response.executionId().toString()))
+                .containsEntry("status", "SUCCEEDED")
+                .containsEntry("row_count", 2)
+                .containsEntry("truncated", false)
+                .containsEntry("result_digest", response.result().resultDigest());
+        assertThatThrownBy(() -> service.execute(actor, token))
+                .isInstanceOf(SecurityException.class).hasMessage("APPROVAL_ALREADY_USED");
     }
 
     private QueryApprovalEnvelope approvalEnvelope(
             UserPrincipal actor, UUID source, UUID snapshot, long sourceVersion, long authorizationVersion) {
         return new QueryApprovalEnvelope(UUID.randomUUID(), actor.tenantId(), actor.userId(), source, snapshot,
-                sourceVersion, authorizationVersion, SqlValidationService.RULE_VERSION, "policy-hash",
-                "SELECT id FROM fact_order LIMIT 10", "sql-hash", "parameter-hash", 10, 30,
-                List.of(), Instant.parse("2026-08-03T00:02:00Z"));
+                sourceVersion, authorizationVersion, SqlValidationService.RULE_VERSION,
+                sha256(SqlValidationService.RULE_VERSION + ":1000:30"),
+                "SELECT id FROM fact_order ORDER BY id LIMIT 10",
+                sha256("SELECT id FROM fact_order ORDER BY id LIMIT 10"), sha256("[]"), 10, 30,
+                List.of(), Instant.now().plusSeconds(120));
     }
 
     private static String invokeIssue(QueryApprovalService service, QueryApprovalEnvelope envelope) {
@@ -322,9 +386,11 @@ class DatabaseIsolationIT {
     }
 
     private com.jizhaoyu.chatbi.application.datasource.DataSourceView insertReadyDataSource(UUID tenant) {
+        UUID sourceId = UUID.randomUUID();
+        String credentialRef = credentialVault.store(tenant, sourceId, READER_PASSWORD);
         var command = new DataSourceCommand("sales-" + UUID.randomUUID(), "analytics.example.com", 3306,
-                "sample_sales", "reader", "reader-secret-password", DataSourceDialect.MYSQL, 1000, 30);
-        var source = dataSourceRepository.save(tenant, UUID.randomUUID(), command, "credential/test");
+                "sample_sales", READER, READER_PASSWORD, DataSourceDialect.MYSQL, 1000, 30);
+        var source = dataSourceRepository.save(tenant, sourceId, command, credentialRef);
         dataSourceRepository.transitionStatus(tenant, source.id(),
                 com.jizhaoyu.chatbi.domain.datasource.DataSourceStatus.DRAFT,
                 com.jizhaoyu.chatbi.domain.datasource.DataSourceStatus.TESTING);
@@ -353,6 +419,15 @@ class DatabaseIsolationIT {
 
     private static Connection readerConnection() throws SQLException {
         return DriverManager.getConnection(SALES.getJdbcUrl(), READER, READER_PASSWORD);
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
 }

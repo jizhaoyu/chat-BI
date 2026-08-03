@@ -26,20 +26,23 @@ class QueryApprovalServiceTest {
         QueryApprovalEnvelope envelope = envelope();
 
         String approvalId = service.issue(envelope);
-        ApprovedQuery approved = service.claim(actor(envelope), approvalId);
+        UUID executionId = UUID.randomUUID();
+        ApprovedQuery approved = service.claimAndStart(actor(envelope), approvalId, executionId);
 
         assertThat(approvalId).hasSizeGreaterThanOrEqualTo(40);
         assertThat(repository.hash).hasSize(32);
         assertThat(new String(repository.hash, java.nio.charset.StandardCharsets.US_ASCII))
                 .doesNotContain(approvalId);
         assertThat(approved.normalizedSql()).isEqualTo(envelope.normalizedSql());
+        assertThat(repository.executionId).isEqualTo(executionId);
         assertThat(approved.toString()).doesNotContain(envelope.normalizedSql());
     }
 
     @Test
     void rejectsMalformedApprovalBeforeRepositoryLookup() {
-        assertThatThrownBy(() -> service.claim(
-                new UserPrincipal(UUID.randomUUID(), UUID.randomUUID(), Set.of(Role.ANALYST)), "short"))
+        assertThatThrownBy(() -> service.claimAndStart(
+                new UserPrincipal(UUID.randomUUID(), UUID.randomUUID(), Set.of(Role.ANALYST)),
+                "short", UUID.randomUUID()))
                 .isInstanceOf(SecurityException.class)
                 .hasMessage("APPROVAL_INVALID");
         assertThat(repository.consumed).isFalse();
@@ -59,6 +62,7 @@ class QueryApprovalServiceTest {
         private byte[] hash;
         private QueryApprovalEnvelope envelope;
         private boolean consumed;
+        private UUID executionId;
 
         @Override
         public void save(byte[] tokenHash, QueryApprovalEnvelope envelope) {
@@ -67,9 +71,10 @@ class QueryApprovalServiceTest {
         }
 
         @Override
-        public QueryApprovalEnvelope consume(
-                byte[] tokenHash, UserPrincipal actor, Instant now, String currentRuleVersion) {
+        public QueryApprovalEnvelope consumeAndStart(
+                byte[] tokenHash, UserPrincipal actor, Instant now, String currentRuleVersion, UUID executionId) {
             consumed = true;
+            this.executionId = executionId;
             assertThat(tokenHash).containsExactly(hash);
             assertThat(actor.tenantId()).isEqualTo(envelope.tenantId());
             assertThat(currentRuleVersion).isEqualTo(envelope.ruleVersion());

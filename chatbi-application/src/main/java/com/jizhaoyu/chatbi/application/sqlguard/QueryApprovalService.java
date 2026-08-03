@@ -9,6 +9,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.UUID;
 
 public final class QueryApprovalService {
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -36,11 +37,12 @@ public final class QueryApprovalService {
         return approvalId;
     }
 
-    public ApprovedQuery claim(UserPrincipal actor, String approvalId) {
+    public ApprovedQuery claimAndStart(UserPrincipal actor, String approvalId, UUID executionId) {
         if (approvalId == null || approvalId.length() < 40 || approvalId.length() > 64) {
             throw new SecurityException("APPROVAL_INVALID");
         }
-        QueryApprovalEnvelope envelope = repository.consume(hash(approvalId), actor, clock.instant(), ruleVersion);
+        QueryApprovalEnvelope envelope = repository.consumeAndStart(
+                hash(approvalId), actor, clock.instant(), ruleVersion, executionId);
         return new ApprovedQuery(envelope);
     }
 

@@ -1,5 +1,7 @@
 package com.jizhaoyu.chatbi.interfaces.web;
 
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionFailure;
+import com.jizhaoyu.chatbi.application.execution.QueryExecutionStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,6 +15,13 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(QueryExecutionFailure.class)
+    ResponseEntity<ApiError> queryExecution(QueryExecutionFailure exception) {
+        HttpStatus status = exception.status() == QueryExecutionStatus.TIMEOUT
+                ? HttpStatus.REQUEST_TIMEOUT : HttpStatus.BAD_GATEWAY;
+        return ResponseEntity.status(status).body(new ApiError(exception.getMessage(), "Query execution failed", null));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception) {
         Map<String, String> fields = new LinkedHashMap<>();

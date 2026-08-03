@@ -16,6 +16,8 @@ public final class ApprovedQuery {
     public UUID userId() { return envelope.userId(); }
     public UUID dataSourceId() { return envelope.dataSourceId(); }
     public UUID metadataSnapshotId() { return envelope.metadataSnapshotId(); }
+    public long dataSourceVersion() { return envelope.dataSourceVersion(); }
+    public long authorizationVersion() { return envelope.authorizationVersion(); }
     public String normalizedSql() { return envelope.normalizedSql(); }
     public int maximumRows() { return envelope.maximumRows(); }
     public int timeoutSeconds() { return envelope.timeoutSeconds(); }

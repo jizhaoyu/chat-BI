@@ -57,12 +57,14 @@
 - `query_validation(id, candidate_id, rule_version, decision, violations_json, estimated_cost_json, policy_hash, approval_id_hash, approval_expires_at, created_at)`
 - `query_approval(id, token_hash, tenant_id, user_id, data_source_id, metadata_snapshot_id, data_source_version, authorization_version, rule_version, policy_hash, sql_hash, parameter_hash, normalized_sql, max_rows, timeout_seconds, status, expires_at, consumed_at, created_at)`
 - `query_approval_reference(approval_id, ordinal_no, table_id, column_id, schema_name, table_name, column_name)`
-- `query_execution(id, validation_id, executor_user_id, status, started_at, completed_at, duration_ms, row_count, truncated, error_code, result_schema_json, result_digest)`
+- `query_execution(id, tenant_id, approval_id, executor_user_id, data_source_id, status, started_at, completed_at, duration_ms, row_count, truncated, error_code, result_digest)`
 - `chart_spec(id, execution_id, type, spec_json, validation_status, created_at)`
 - `question_feedback(id, question_id, user_id, rating, corrected_sql, comment, created_at)`
 - `audit_event(id, tenant_id, actor_id, action, resource_type, resource_id, decision, detail_json, created_at)`
 
-完整结果默认仅存在短期缓存或响应流中；如后续需要持久化，必须增加保留期、加密和访问控制设计。
+完整结果默认仅存在短期缓存或响应流中；如后续需要持久化，必须增加保留期、加密和访问控制设计。首批执行器启用 JDBC 游标抓取，并固定限制返回结果为 2 MiB、单个单元格为 256 KiB；总预算耗尽时只在完整行边界截断，单元格超限则拒绝结果。
+
+首批执行接口只接受路径中的 `approvalId`，不接受 SQL、数据源 ID 或资源限制覆盖值。平台短事务原子消费审批、创建 `RUNNING` 执行记录并写开始审计，提交后才访问外部分析库；成功、截断或失败再由独立平台短事务写入唯一终态。平台库不保存完整结果，只保存行数、截断标记、稳定错误码和不可逆结果摘要。
 
 ## 4. 审批对象约束
 
@@ -97,6 +99,7 @@
 - `SQL_PARAMETER_INVALID`
 - `QUERY_COST_EXCEEDED`
 - `QUERY_TIMEOUT`
+- `QUERY_RESULT_TOO_LARGE`
 - `RESULT_LIMIT_EXCEEDED`
 - `APPROVAL_EXPIRED`
 - `APPROVAL_ALREADY_USED`
