@@ -16,5 +16,7 @@ public record DataSourceView(
         DataSourceDialect dialect,
         DataSourceStatus status,
         int maxRows,
-        int timeoutSeconds) {
+        int timeoutSeconds,
+        long version,
+        long authorizationVersion) {
 }

@@ -22,7 +22,7 @@
 | PUT | `/data-sources/{id}/permissions` | 配置对象授权 |
 | POST | `/analysis-sessions` | 创建分析会话 |
 | POST | `/analysis-sessions/{id}/questions` | 生成候选 SQL 和解释 |
-| POST | `/query-candidates/{id}:validate` | 运行安全校验并返回批准标识 |
+| POST | `/query-candidates:validate` | 校验手工或模型候选 SQL 并返回一次性批准标识；候选持久化后再增加按 ID 校验 |
 | POST | `/approved-queries/{approvalId}:execute` | 执行一次已批准查询 |
 | POST | `/query-results/{id}:explain` | 生成结果解释和图表规格 |
 | POST | `/questions/{id}/feedback` | 提交正确性反馈 |
@@ -32,7 +32,7 @@
 
 ### 数据源与目录
 
-- `data_source(id, tenant_id, name, dialect, host, port, database_name, username, credential_ref, status, max_rows, timeout_seconds, version, created_at, updated_at)`
+- `data_source(id, tenant_id, name, dialect, host, port, database_name, username, credential_ref, status, max_rows, timeout_seconds, version, authorization_version, created_at, updated_at)`
 - `data_source_credential(id, tenant_id, data_source_id, credential_version, key_id, nonce, ciphertext, active, created_at)`
 - `catalog_snapshot(id, tenant_id, data_source_id, version_no, status, object_count, created_at, activated_at)`
 - `catalog_table(id, tenant_id, snapshot_id, schema_name, table_name, table_comment, business_name, sensitivity, enabled)`
@@ -55,6 +55,8 @@
 - `analysis_question(id, session_id, question, status, metadata_snapshot_id, prompt_version, created_at)`
 - `query_candidate(id, question_id, raw_sql, normalized_sql, explanation, referenced_objects_json, model, status, created_at)`
 - `query_validation(id, candidate_id, rule_version, decision, violations_json, estimated_cost_json, policy_hash, approval_id_hash, approval_expires_at, created_at)`
+- `query_approval(id, token_hash, tenant_id, user_id, data_source_id, metadata_snapshot_id, data_source_version, authorization_version, rule_version, policy_hash, sql_hash, parameter_hash, normalized_sql, max_rows, timeout_seconds, status, expires_at, consumed_at, created_at)`
+- `query_approval_reference(approval_id, ordinal_no, table_id, column_id, schema_name, table_name, column_name)`
 - `query_execution(id, validation_id, executor_user_id, status, started_at, completed_at, duration_ms, row_count, truncated, error_code, result_schema_json, result_digest)`
 - `chart_spec(id, execution_id, type, spec_json, validation_status, created_at)`
 - `question_feedback(id, question_id, user_id, rating, corrected_sql, comment, created_at)`
@@ -74,20 +76,31 @@
 - 规则版本和资源限制
 - 过期时间及一次性/可复用策略
 
-执行器发现任一上下文变化时拒绝执行，要求重新校验。
+批准标识使用 256 位随机数，仅在创建响应时返回明文，平台库只保存 SHA-256 摘要。标识默认两分钟过期且只能原子消费一次；执行器发现租户、用户、数据源版本、活动元数据快照、授权版本、规则版本或生命周期状态任一变化时拒绝执行并要求重新校验。
 
 ## 5. 错误码示例
 
 - `DATASOURCE_UNAVAILABLE`
 - `DATASOURCE_NOT_READ_ONLY`
 - `SQL_PARSE_FAILED`
-- `SQL_STATEMENT_NOT_ALLOWED`
+- `SQL_MULTIPLE_STATEMENTS`
+- `SQL_COMMENT_FORBIDDEN`
+- `SQL_STATEMENT_FORBIDDEN`
+- `SQL_FEATURE_FORBIDDEN`
 - `SQL_OBJECT_FORBIDDEN`
+- `SQL_COLUMN_FORBIDDEN`
+- `SQL_WILDCARD_FORBIDDEN`
+- `SQL_IDENTIFIER_AMBIGUOUS`
 - `SQL_FUNCTION_FORBIDDEN`
+- `SQL_VARIABLE_FORBIDDEN`
+- `SQL_LIMIT_INVALID`
+- `SQL_PARAMETER_INVALID`
 - `QUERY_COST_EXCEEDED`
 - `QUERY_TIMEOUT`
 - `RESULT_LIMIT_EXCEEDED`
 - `APPROVAL_EXPIRED`
+- `APPROVAL_ALREADY_USED`
+- `APPROVAL_INVALID`
 
 数据库原始错误先分类和脱敏，再映射为业务错误码。
 

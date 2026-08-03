@@ -11,12 +11,17 @@ import com.jizhaoyu.chatbi.application.catalog.CatalogApplicationService;
 import com.jizhaoyu.chatbi.application.catalog.CatalogMetadataReader;
 import com.jizhaoyu.chatbi.application.catalog.CatalogPermissionRepository;
 import com.jizhaoyu.chatbi.application.catalog.CatalogSnapshotRepository;
+import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalRepository;
+import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalService;
+import com.jizhaoyu.chatbi.application.sqlguard.SqlGuardPort;
+import com.jizhaoyu.chatbi.application.sqlguard.SqlValidationService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Clock;
+import java.time.Duration;
 
 @Configuration
 public class ApplicationConfiguration {
@@ -44,6 +49,24 @@ public class ApplicationConfiguration {
             AuditPort auditPort) {
         return new CatalogApplicationService(
                 snapshots, metadataReader, permissions, auditPort, Clock.systemUTC());
+    }
+
+    @Bean
+    QueryApprovalService queryApprovalService(QueryApprovalRepository repository) {
+        return new QueryApprovalService(
+                repository, Clock.systemUTC(), Duration.ofMinutes(2), SqlValidationService.RULE_VERSION);
+    }
+
+    @Bean
+    SqlValidationService sqlValidationService(
+            DataSourceRepository dataSources,
+            CatalogSnapshotRepository snapshots,
+            CatalogPermissionRepository permissions,
+            SqlGuardPort sqlGuard,
+            QueryApprovalService approvals,
+            AuditPort auditPort) {
+        return new SqlValidationService(
+                dataSources, snapshots, permissions, sqlGuard, approvals, auditPort, Clock.systemUTC());
     }
 
     @Bean

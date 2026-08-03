@@ -42,6 +42,9 @@ public class JdbcCatalogPermissionRepository implements CatalogPermissionReposit
                     dataSourceId.toString(), permission.objectType().name(), permission.objectId().toString(),
                     permission.maskPolicy());
         }
+        jdbc.update("UPDATE data_source SET authorization_version = authorization_version + 1 "
+                        + "WHERE tenant_id = ? AND id = ?",
+                tenantId.toString(), dataSourceId.toString());
     }
 
     @Override

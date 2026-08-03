@@ -6,6 +6,10 @@ import com.jizhaoyu.chatbi.application.datasource.DataSourceRepository;
 import com.jizhaoyu.chatbi.application.datasource.CredentialVaultPort;
 import com.jizhaoyu.chatbi.application.catalog.CatalogPermissionRepository;
 import com.jizhaoyu.chatbi.application.catalog.CatalogSnapshotRepository;
+import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalEnvelope;
+import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalRepository;
+import com.jizhaoyu.chatbi.application.sqlguard.QueryApprovalService;
+import com.jizhaoyu.chatbi.application.sqlguard.SqlValidationService;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogColumn;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogObjectType;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogPermission;
@@ -14,6 +18,8 @@ import com.jizhaoyu.chatbi.domain.catalog.CatalogSnapshotStatus;
 import com.jizhaoyu.chatbi.domain.catalog.CatalogTable;
 import com.jizhaoyu.chatbi.domain.catalog.SemanticMetadata;
 import com.jizhaoyu.chatbi.domain.datasource.DataSourceDialect;
+import com.jizhaoyu.chatbi.domain.identity.Role;
+import com.jizhaoyu.chatbi.domain.identity.UserPrincipal;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,6 +44,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -77,6 +86,7 @@ class DatabaseIsolationIT {
     @Autowired CredentialVaultPort credentialVault;
     @Autowired CatalogSnapshotRepository catalogSnapshots;
     @Autowired CatalogPermissionRepository catalogPermissions;
+    @Autowired QueryApprovalRepository queryApprovals;
     @Autowired @Qualifier("platformJdbcTemplate") JdbcTemplate platformJdbc;
 
     @DynamicPropertySource
@@ -246,6 +256,62 @@ class DatabaseIsolationIT {
                 tenant, subject, source.id(), List.of(forged)))
                 .isInstanceOf(SecurityException.class)
                 .hasMessage("CATALOG_PERMISSION_OBJECT_FORBIDDEN");
+    }
+
+    @Test
+    void queryApprovalStoresOnlyHashConsumesOnceAndInvalidatesOnAuthorizationChange() {
+        UUID tenant = insertTenant();
+        UUID subject = UUID.randomUUID();
+        platformJdbc.update("INSERT INTO app_user(id, tenant_id, username, password_hash, enabled) "
+                        + "VALUES (?, ?, ?, '{noop}test', TRUE)",
+                subject.toString(), tenant.toString(), "approval-user-" + subject);
+        var source = insertReadyDataSource(tenant);
+        CatalogSnapshot syncing = syncingSnapshot(tenant, source.id(), UUID.randomUUID(), 1, "fact_order");
+        catalogSnapshots.beginSync(tenant, source.id(), syncing.id(), Instant.now());
+        CatalogSnapshot active = catalogSnapshots.completeAndActivate(syncing);
+        UserPrincipal actor = new UserPrincipal(subject, tenant, java.util.Set.of(Role.ANALYST));
+        Clock clock = Clock.fixed(Instant.parse("2026-08-03T00:00:00Z"), ZoneOffset.UTC);
+        QueryApprovalService service = new QueryApprovalService(
+                queryApprovals, clock, Duration.ofMinutes(2), SqlValidationService.RULE_VERSION);
+        QueryApprovalEnvelope first = approvalEnvelope(actor, source.id(), active.id(), source.version(), 0);
+
+        String firstToken = invokeIssue(service, first);
+
+        byte[] storedHash = platformJdbc.queryForObject(
+                "SELECT token_hash FROM query_approval WHERE id = ?", byte[].class, first.id().toString());
+        assertThat(storedHash).hasSize(32);
+        assertThat(HexFormat.of().formatHex(storedHash)).doesNotContain(firstToken);
+        assertThat(service.claim(actor, firstToken).normalizedSql()).isEqualTo(first.normalizedSql());
+        assertThatThrownBy(() -> service.claim(actor, firstToken))
+                .isInstanceOf(SecurityException.class).hasMessage("APPROVAL_ALREADY_USED");
+
+        QueryApprovalEnvelope stale = approvalEnvelope(actor, source.id(), active.id(), source.version(), 0);
+        String staleToken = invokeIssue(service, stale);
+        CatalogPermission tableGrant = new CatalogPermission(UUID.randomUUID(), tenant, "USER", subject,
+                source.id(), CatalogObjectType.TABLE, active.tables().getFirst().id(), "");
+        catalogPermissions.replace(tenant, subject, source.id(), List.of(tableGrant));
+
+        assertThatThrownBy(() -> service.claim(actor, staleToken))
+                .isInstanceOf(SecurityException.class).hasMessage("APPROVAL_INVALID");
+    }
+
+    private QueryApprovalEnvelope approvalEnvelope(
+            UserPrincipal actor, UUID source, UUID snapshot, long sourceVersion, long authorizationVersion) {
+        return new QueryApprovalEnvelope(UUID.randomUUID(), actor.tenantId(), actor.userId(), source, snapshot,
+                sourceVersion, authorizationVersion, SqlValidationService.RULE_VERSION, "policy-hash",
+                "SELECT id FROM fact_order LIMIT 10", "sql-hash", "parameter-hash", 10, 30,
+                List.of(), Instant.parse("2026-08-03T00:02:00Z"));
+    }
+
+    private static String invokeIssue(QueryApprovalService service, QueryApprovalEnvelope envelope) {
+        try {
+            java.lang.reflect.Method issue = QueryApprovalService.class
+                    .getDeclaredMethod("issue", QueryApprovalEnvelope.class);
+            issue.setAccessible(true);
+            return (String) issue.invoke(service, envelope);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     private UUID insertTenant() {

@@ -59,7 +59,7 @@ class DataSourceApplicationServiceTest {
 
     private DataSourceView view(UUID id, DataSourceStatus status) {
         return new DataSourceView(id, "sales", "sample-sales", 3306, "sample_sales", "reader", "env/sample-reader",
-                DataSourceDialect.MYSQL, status, 1000, 30);
+                DataSourceDialect.MYSQL, status, 1000, 30, 0, 0);
     }
 
     private final class InMemoryRepository implements DataSourceRepository {

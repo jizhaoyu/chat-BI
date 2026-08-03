@@ -130,6 +130,9 @@ public class JdbcCatalogSnapshotRepository implements CatalogSnapshotRepository 
                             + "(tenant_id, column_id, ordinal_no, synonym) VALUES (?, ?, ?, ?)",
                     tenantId.toString(), columnId.toString(), index + 1, semantic.synonyms().get(index));
         }
+        jdbc.update("UPDATE data_source SET authorization_version = authorization_version + 1 "
+                        + "WHERE tenant_id = ? AND id = ?",
+                tenantId.toString(), dataSourceId.toString());
     }
 
     private void insertObjects(CatalogSnapshot snapshot) {

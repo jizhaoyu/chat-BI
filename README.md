@@ -20,7 +20,7 @@
 - Java 21、Spring Boot 3.x、Maven
 - Spring MVC、Bean Validation、Spring Security
 - Spring JDBC：平台元数据；独立受控连接池：外部分析数据源
-- JSqlParser 或等价 SQL AST 解析器，具体版本在验证兼容方言后锁定
+- JSqlParser 5.3：固定版本解析 MySQL `SELECT` AST，未知节点默认拒绝
 - MySQL：平台用户、数据源配置、语义元数据、会话和审计
 - Redis：元数据缓存、限流和异步任务状态，MVP 可按需要引入
 - Spring AI 作为首选模型适配层，模型只生成结构化候选，不拥有数据库凭据
@@ -52,4 +52,4 @@
 
 ## 当前状态
 
-CBI-P1 与 CBI-P2 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。当前已具备双库事务隔离、凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权和语义配置；正在推进 CBI-P3 SQL 安全网关。
+CBI-P1 与 CBI-P2 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。当前已具备双库事务隔离、凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权和语义配置；CBI-P3 已完成首批 SQL AST 白名单校验、权限解析和一次性短时审批，正在补齐受控执行前的安全闭环。

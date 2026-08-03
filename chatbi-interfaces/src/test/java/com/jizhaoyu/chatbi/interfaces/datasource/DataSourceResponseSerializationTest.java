@@ -15,7 +15,8 @@ class DataSourceResponseSerializationTest {
     void responseOmitsConnectionAndCredentialFields() throws Exception {
         String sentinel = "credential-sentinel-do-not-leak";
         DataSourceView view = new DataSourceView(UUID.randomUUID(), "sales", "db.internal.test", 3306,
-                "sample_sales", "secret-user", sentinel, DataSourceDialect.MYSQL, DataSourceStatus.DRAFT, 1000, 30);
+                "sample_sales", "secret-user", sentinel, DataSourceDialect.MYSQL, DataSourceStatus.DRAFT,
+                1000, 30, 0, 0);
 
         String json = new ObjectMapper().writeValueAsString(DataSourceController.DataSourceResponse.from(view));
 

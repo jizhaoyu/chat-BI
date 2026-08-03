@@ -20,7 +20,7 @@ import java.util.UUID;
 public class JdbcDataSourceRepository implements DataSourceRepository {
     private static final String BASE_SELECT = """
             SELECT id, name, host, port, database_name, username, credential_ref,
-                   dialect, status, max_rows, timeout_seconds
+                   dialect, status, max_rows, timeout_seconds, version, authorization_version
             FROM data_source
             """;
     private static final RowMapper<DataSourceView> MAPPER = JdbcDataSourceRepository::map;
@@ -87,6 +87,7 @@ public class JdbcDataSourceRepository implements DataSourceRepository {
         return new DataSourceView(UUID.fromString(rs.getString("id")), rs.getString("name"), rs.getString("host"),
                 rs.getInt("port"), rs.getString("database_name"), rs.getString("username"), rs.getString("credential_ref"),
                 DataSourceDialect.valueOf(rs.getString("dialect")), DataSourceStatus.valueOf(rs.getString("status")),
-                rs.getInt("max_rows"), rs.getInt("timeout_seconds"));
+                rs.getInt("max_rows"), rs.getInt("timeout_seconds"), rs.getLong("version"),
+                rs.getLong("authorization_version"));
     }
 }

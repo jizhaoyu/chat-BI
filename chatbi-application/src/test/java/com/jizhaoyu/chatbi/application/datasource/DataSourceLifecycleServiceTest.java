@@ -123,7 +123,7 @@ class DataSourceLifecycleServiceTest {
 
     private DataSourceView view(DataSourceStatus status) {
         return new DataSourceView(sourceId, "sales", "analytics.example.com", 3306, "sample_sales",
-                "reader", "credential/" + UUID.randomUUID(), DataSourceDialect.MYSQL, status, 1000, 30);
+                "reader", "credential/" + UUID.randomUUID(), DataSourceDialect.MYSQL, status, 1000, 30, 0, 0);
     }
 
     private final class MemoryRepository implements DataSourceRepository {

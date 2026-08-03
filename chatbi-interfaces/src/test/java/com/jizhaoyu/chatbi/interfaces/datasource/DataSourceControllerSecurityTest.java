@@ -122,7 +122,7 @@ class DataSourceControllerSecurityTest {
         public DataSourceView save(UUID tenantId, UUID id, DataSourceCommand command, String credentialRef) {
             DataSourceView value = new DataSourceView(id, command.name(), command.host(), command.port(),
                     command.database(), command.username(), credentialRef, command.dialect(), DataSourceStatus.DRAFT,
-                    command.maxRows(), command.timeoutSeconds());
+                    command.maxRows(), command.timeoutSeconds(), 0, 0);
             values.add(value);
             return value;
         }
