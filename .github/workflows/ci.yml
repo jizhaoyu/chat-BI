@@ -57,6 +57,18 @@ jobs:
           fi
       - name: Verify unit and container suites
         run: mvn --batch-mode --no-transfer-progress verify
+      - name: Annotate failed test reports
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          reports=(**/target/surefire-reports/*.txt **/target/failsafe-reports/*.txt)
+          for report in "${reports[@]}"; do
+            if grep -Eq 'Failures: [1-9]|Errors: [1-9]' "$report"; then
+              summary=$(tail -n 80 "$report" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')
+              echo "::error file=$report,title=Failed test report::$summary"
+            fi
+          done
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
