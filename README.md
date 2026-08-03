@@ -52,4 +52,4 @@
 
 ## 当前状态
 
-CBI-P1 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。CBI-P2 已完成本地实现与快速测试，正在等待远程 MySQL 容器验收；当前包括凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权和语义配置。
+CBI-P1 与 CBI-P2 已完成，并通过 Java 21 快速测试与远程 Docker/Compose/Testcontainers 验收。当前已具备双库事务隔离、凭据认证加密、SSRF 防护、受限动态连接池、元数据活动快照、表列显式授权和语义配置；正在推进 CBI-P3 SQL 安全网关。
