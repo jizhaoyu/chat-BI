@@ -84,7 +84,7 @@ class DatabaseIsolationIT {
         registry.add("app.platform.datasource.url", PLATFORM::getJdbcUrl);
         registry.add("app.platform.datasource.username", PLATFORM::getUsername);
         registry.add("app.platform.datasource.password", PLATFORM::getPassword);
-        registry.add("app.platform.datasource.maximum-pool-size", () -> 2);
+        registry.add("app.platform.datasource.maximum-pool-size", () -> 1);
         registry.add("app.sample-analysis.enabled", () -> true);
         registry.add("app.sample-analysis.datasource.url", SALES::getJdbcUrl);
         registry.add("app.sample-analysis.datasource.username", () -> READER);

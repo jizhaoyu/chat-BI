@@ -200,60 +200,80 @@ public class JdbcCatalogSnapshotRepository implements CatalogSnapshotRepository 
     }
 
     private List<CatalogTable> loadTables(UUID tenantId, UUID snapshotId) {
-        return jdbc.query("SELECT id, schema_name, table_name, table_comment, business_name, sensitivity, enabled "
+        List<TableRow> rows = jdbc.query("SELECT id, schema_name, table_name, table_comment, business_name, sensitivity, enabled "
                         + "FROM catalog_table WHERE tenant_id = ? AND snapshot_id = ? "
                         + "ORDER BY schema_name, table_name",
-                (row, number) -> {
-                    UUID tableId = UUID.fromString(row.getString("id"));
-                    return new CatalogTable(tableId, tenantId, snapshotId, row.getString("schema_name"),
-                            row.getString("table_name"), row.getString("table_comment"),
-                            new SemanticMetadata(row.getString("business_name"), List.of(),
-                                    SensitivityLevel.valueOf(row.getString("sensitivity"))),
-                            row.getBoolean("enabled"), loadColumns(tenantId, tableId));
-                }, tenantId.toString(), snapshotId.toString());
+                (row, number) -> new TableRow(
+                        UUID.fromString(row.getString("id")), row.getString("schema_name"),
+                        row.getString("table_name"), row.getString("table_comment"),
+                        row.getString("business_name"),
+                        SensitivityLevel.valueOf(row.getString("sensitivity")),
+                        row.getBoolean("enabled")),
+                tenantId.toString(), snapshotId.toString());
+        return rows.stream()
+                .map(row -> new CatalogTable(row.id(), tenantId, snapshotId, row.schemaName(), row.name(),
+                        row.comment(), new SemanticMetadata(row.businessName(), List.of(), row.sensitivity()),
+                        row.enabled(), loadColumns(tenantId, row.id())))
+                .toList();
     }
 
     private List<CatalogColumn> loadColumns(UUID tenantId, UUID tableId) {
-        return jdbc.query("SELECT id, column_name, data_type, nullable, ordinal_no, column_comment, "
+        List<ColumnRow> rows = jdbc.query("SELECT id, column_name, data_type, nullable, ordinal_no, column_comment, "
                         + "business_name, sensitivity, enabled FROM catalog_column "
                         + "WHERE tenant_id = ? AND table_id = ? ORDER BY ordinal_no",
-                (row, number) -> {
-                    UUID columnId = UUID.fromString(row.getString("id"));
-                    List<String> synonyms = jdbc.query("SELECT synonym FROM catalog_column_synonym "
-                                    + "WHERE tenant_id = ? AND column_id = ? ORDER BY ordinal_no",
-                            (synonymRow, ignored) -> synonymRow.getString(1),
-                            tenantId.toString(), columnId.toString());
-                    return new CatalogColumn(columnId, tenantId, tableId, row.getString("column_name"),
-                            row.getString("data_type"), row.getBoolean("nullable"), row.getInt("ordinal_no"),
-                            row.getString("column_comment"),
-                            new SemanticMetadata(row.getString("business_name"), synonyms,
-                                    SensitivityLevel.valueOf(row.getString("sensitivity"))),
-                            row.getBoolean("enabled"));
-                }, tenantId.toString(), tableId.toString());
+                (row, number) -> new ColumnRow(
+                        UUID.fromString(row.getString("id")), row.getString("column_name"),
+                        row.getString("data_type"), row.getBoolean("nullable"), row.getInt("ordinal_no"),
+                        row.getString("column_comment"), row.getString("business_name"),
+                        SensitivityLevel.valueOf(row.getString("sensitivity")), row.getBoolean("enabled")),
+                tenantId.toString(), tableId.toString());
+        return rows.stream().map(row -> {
+            List<String> synonyms = jdbc.query("SELECT synonym FROM catalog_column_synonym "
+                            + "WHERE tenant_id = ? AND column_id = ? ORDER BY ordinal_no",
+                    (synonymRow, ignored) -> synonymRow.getString(1),
+                    tenantId.toString(), row.id().toString());
+            return new CatalogColumn(row.id(), tenantId, tableId, row.name(), row.dataType(), row.nullable(),
+                    row.ordinal(), row.comment(),
+                    new SemanticMetadata(row.businessName(), synonyms, row.sensitivity()), row.enabled());
+        }).toList();
     }
 
     private List<CatalogRelation> loadRelations(UUID tenantId, UUID snapshotId) {
-        return jdbc.query("SELECT id, source_table_id, target_table_id, relation_type FROM catalog_relation "
+        List<RelationRow> rows = jdbc.query(
+                "SELECT id, source_table_id, target_table_id, relation_type FROM catalog_relation "
                         + "WHERE tenant_id = ? AND snapshot_id = ? ORDER BY id",
-                (row, number) -> {
-                    UUID relationId = UUID.fromString(row.getString("id"));
-                    List<RelationColumn> columns = jdbc.query("SELECT source_column_name, target_column_name "
-                                    + "FROM catalog_relation_column WHERE tenant_id = ? AND relation_id = ? "
-                                    + "ORDER BY ordinal_no",
-                            (columnRow, ignored) -> new RelationColumn(
-                                    columnRow.getString(1), columnRow.getString(2)),
-                            tenantId.toString(), relationId.toString());
-                    return new CatalogRelation(relationId, tenantId, snapshotId,
-                            UUID.fromString(row.getString("source_table_id")),
-                            columns.stream().map(RelationColumn::source).toList(),
-                            UUID.fromString(row.getString("target_table_id")),
-                            columns.stream().map(RelationColumn::target).toList(),
-                            row.getString("relation_type"));
-                }, tenantId.toString(), snapshotId.toString());
+                (row, number) -> new RelationRow(
+                        UUID.fromString(row.getString("id")),
+                        UUID.fromString(row.getString("source_table_id")),
+                        UUID.fromString(row.getString("target_table_id")), row.getString("relation_type")),
+                tenantId.toString(), snapshotId.toString());
+        return rows.stream().map(row -> {
+            List<RelationColumn> columns = jdbc.query("SELECT source_column_name, target_column_name "
+                            + "FROM catalog_relation_column WHERE tenant_id = ? AND relation_id = ? "
+                            + "ORDER BY ordinal_no",
+                    (columnRow, ignored) -> new RelationColumn(columnRow.getString(1), columnRow.getString(2)),
+                    tenantId.toString(), row.id().toString());
+            return new CatalogRelation(row.id(), tenantId, snapshotId, row.sourceTableId(),
+                    columns.stream().map(RelationColumn::source).toList(), row.targetTableId(),
+                    columns.stream().map(RelationColumn::target).toList(), row.type());
+        }).toList();
     }
 
     private record SnapshotRow(
             long version, CatalogSnapshotStatus status, Instant createdAt, Instant activatedAt) {
+    }
+
+    private record TableRow(
+            UUID id, String schemaName, String name, String comment, String businessName,
+            SensitivityLevel sensitivity, boolean enabled) {
+    }
+
+    private record ColumnRow(
+            UUID id, String name, String dataType, boolean nullable, int ordinal, String comment,
+            String businessName, SensitivityLevel sensitivity, boolean enabled) {
+    }
+
+    private record RelationRow(UUID id, UUID sourceTableId, UUID targetTableId, String type) {
     }
 
     private record RelationColumn(String source, String target) {
