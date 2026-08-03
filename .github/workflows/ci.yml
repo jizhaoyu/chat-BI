@@ -44,6 +44,10 @@ jobs:
       - name: Start shipped Compose environment
         run: |
           docker compose up -d --wait
+      - name: Inspect sample reader grant
+        run: |
+          docker exec -e MYSQL_PWD="$SAMPLE_DB_ROOT_PASSWORD" chatbi-sample-sales-mysql \
+            mysql --protocol=socket -uroot -e "SELECT User, Host FROM mysql.user WHERE User = 'chatbi_reader'; SHOW GRANTS FOR 'chatbi_reader'@'%'; SHOW GRANTS FOR 'chatbi_reader'@'localhost';"
       - name: Verify sample reader can query
         run: |
           docker exec -e MYSQL_PWD="$SAMPLE_DB_PASSWORD" chatbi-sample-sales-mysql \
